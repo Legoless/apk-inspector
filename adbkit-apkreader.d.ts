@@ -2,6 +2,7 @@ declare module "adbkit-apkreader" {
   interface Manifest {
     package?: string;
     usesPermissions?: Array<{ name?: string }>;
+    usesFeatures?: Array<{ name?: string; required?: boolean }>;
   }
 
   class ApkReader {

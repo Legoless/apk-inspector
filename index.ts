@@ -5,10 +5,17 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+interface UsesFeature {
+  name: string;
+  required: boolean;
+}
+
 interface ApkInfo {
   filePath: string;
   packageName: string | null;
   permissions: string[];
+  usesFeatures: UsesFeature[];
+  hardwareApis: string[];
   queriedPackages: string[];
   queriedIntents: string[];
   queriedProviders: string[];
@@ -74,6 +81,82 @@ function extractQueriesFromXml(document: XmlNode): {
   return { packages, intents, providers };
 }
 
+const HARDWARE_API_PATTERNS = [
+  { pattern: "Landroid/hardware/Sensor;", label: "android.hardware.Sensor" },
+  { pattern: "Landroid/hardware/SensorManager;", label: "android.hardware.SensorManager" },
+  { pattern: "Landroid/hardware/SensorEvent;", label: "android.hardware.SensorEvent" },
+  { pattern: "Landroid/hardware/SensorEventListener;", label: "android.hardware.SensorEventListener" },
+  { pattern: "Landroid/hardware/camera2/", label: "android.hardware.camera2" },
+  { pattern: "Landroid/hardware/Camera;", label: "android.hardware.Camera" },
+  { pattern: "Landroid/location/LocationManager;", label: "android.location.LocationManager" },
+  { pattern: "Landroid/media/AudioRecord;", label: "android.media.AudioRecord" },
+  { pattern: "Landroid/bluetooth/", label: "android.bluetooth" },
+  { pattern: "Landroid/nfc/", label: "android.nfc" },
+  { pattern: "Landroid/hardware/fingerprint/", label: "android.hardware.fingerprint" },
+  { pattern: "Landroid/hardware/biometrics/", label: "android.hardware.biometrics" },
+];
+
+async function scanDexForHardwareApis(apkPath: string): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const foundApis = new Set<string>();
+
+    yauzl.open(apkPath, { lazyEntries: true }, (err, zipfile) => {
+      if (err || !zipfile) {
+        reject(err || new Error("Failed to open APK file"));
+        return;
+      }
+
+      const dexBuffers: Buffer[] = [];
+      let pendingReads = 0;
+
+      zipfile.readEntry();
+      zipfile.on("entry", (entry) => {
+        if (entry.fileName.match(/^classes\d*\.dex$/)) {
+          pendingReads++;
+          zipfile.openReadStream(entry, (err, readStream) => {
+            if (err || !readStream) {
+              pendingReads--;
+              zipfile.readEntry();
+              return;
+            }
+            const chunks: Buffer[] = [];
+            readStream.on("data", (chunk) => chunks.push(chunk));
+            readStream.on("end", () => {
+              dexBuffers.push(Buffer.concat(chunks));
+              pendingReads--;
+              zipfile.readEntry();
+            });
+          });
+        } else {
+          zipfile.readEntry();
+        }
+      });
+
+      zipfile.on("end", () => {
+        const checkComplete = () => {
+          if (pendingReads > 0) {
+            setTimeout(checkComplete, 10);
+            return;
+          }
+
+          for (const buffer of dexBuffers) {
+            const content = buffer.toString("latin1");
+            for (const { pattern, label } of HARDWARE_API_PATTERNS) {
+              if (content.includes(pattern)) {
+                foundApis.add(label);
+              }
+            }
+          }
+          resolve(Array.from(foundApis).sort());
+        };
+        checkComplete();
+      });
+
+      zipfile.on("error", reject);
+    });
+  });
+}
+
 async function extractApkFromApkm(apkmPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "apkm-"));
@@ -127,6 +210,7 @@ async function inspectApk(apkPath: string): Promise<ApkInfo> {
   const rawXml = await reader.readXml("AndroidManifest.xml") as XmlNode;
 
   const permissions: string[] = [];
+  const usesFeatures: UsesFeature[] = [];
 
   if (manifest.usesPermissions) {
     for (const perm of manifest.usesPermissions) {
@@ -136,12 +220,26 @@ async function inspectApk(apkPath: string): Promise<ApkInfo> {
     }
   }
 
+  if (manifest.usesFeatures) {
+    for (const feature of manifest.usesFeatures) {
+      if (feature.name) {
+        usesFeatures.push({
+          name: feature.name,
+          required: feature.required !== false,
+        });
+      }
+    }
+  }
+
   const queries = extractQueriesFromXml(rawXml);
+  const hardwareApis = await scanDexForHardwareApis(apkPath);
 
   return {
     filePath: apkPath,
     packageName: manifest.package || null,
     permissions: permissions.sort(),
+    usesFeatures: usesFeatures.sort((a, b) => a.name.localeCompare(b.name)),
+    hardwareApis,
     queriedPackages: queries.packages.sort(),
     queriedIntents: queries.intents.sort(),
     queriedProviders: queries.providers.sort(),
@@ -184,6 +282,25 @@ function printInfo(info: ApkInfo): void {
   } else {
     for (const perm of info.permissions) {
       console.log(`  • ${perm}`);
+    }
+  }
+
+  console.log("\n🔧 USES FEATURES:");
+  if (info.usesFeatures.length === 0) {
+    console.log("  (none)");
+  } else {
+    for (const feature of info.usesFeatures) {
+      const requiredStr = feature.required ? "required" : "optional";
+      console.log(`  • ${feature.name} (${requiredStr})`);
+    }
+  }
+
+  console.log("\n📡 HARDWARE APIS (detected in code):");
+  if (info.hardwareApis.length === 0) {
+    console.log("  (none)");
+  } else {
+    for (const api of info.hardwareApis) {
+      console.log(`  • ${api}`);
     }
   }
 
