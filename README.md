@@ -17,20 +17,36 @@ A command-line tool to inspect APK and APKM files for permissions, package queri
 
 ## Installation
 
+### Global Installation
+
+```bash
+npm install -g .
+```
+
+Or link for development:
+
+```bash
+npm link
+```
+
+### Local Installation
+
 ```bash
 npm install
 ```
 
 ## Usage
 
+### Global Command
+
 ```bash
-npm start <file.apk|file.apkm> [...]
+apk-inspector <file.apk|file.apkm> [...]
 ```
 
-Or directly with tsx:
+### Local (npm start)
 
 ```bash
-npx tsx index.ts <file.apk|file.apkm> [...]
+npm start <file.apk|file.apkm> [...]
 ```
 
 ### Examples
@@ -38,13 +54,13 @@ npx tsx index.ts <file.apk|file.apkm> [...]
 Inspect a single APK:
 
 ```bash
-npm start app.apk
+apk-inspector app.apk
 ```
 
 Inspect multiple files:
 
 ```bash
-npm start app1.apk app2.apkm app3.apk
+apk-inspector app1.apk app2.apkm app3.apk
 ```
 
 ## Output
