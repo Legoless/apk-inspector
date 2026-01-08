@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import ApkReader from "adbkit-apkreader";
 import * as yauzl from "yauzl";
 import * as fs from "fs";
@@ -220,7 +221,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
-    console.log("Usage: npx tsx index.ts <file.apk|file.apkm> [...]");
+    console.log("Usage: apk-inspector <file.apk|file.apkm> [...]");
     console.log("\nInspects APK and APKM files for permissions and package queries.");
     process.exit(1);
   }

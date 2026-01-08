@@ -3,10 +3,17 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Inspect APK and APKM files for permissions and package queries",
-  "main": "index.ts",
+  "main": "dist/index.js",
+  "bin": {
+    "apk-inspector": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "start": "npx tsx index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "adbkit-apkreader": "^3.2.0",
